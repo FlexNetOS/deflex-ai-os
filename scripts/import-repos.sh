@@ -1,7 +1,7 @@
 #!/bin/bash
 
 # Import starred repositories script
-# Usage: ./scripts/import-repos.sh
+# Usage: ./scripts/import-repos.sh [--starred-page PAGE]
 
 set -e
 
@@ -9,6 +9,24 @@ echo "🚀 Starting repository import process..."
 
 # Create directories if they don't exist
 mkdir -p vendor external
+
+# Parse command line arguments
+IMPORT_STARRED=false
+STARRED_PAGE=3
+
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --starred-page)
+            IMPORT_STARRED=true
+            STARRED_PAGE="$2"
+            shift 2
+            ;;
+        *)
+            echo "Unknown option: $1"
+            exit 1
+            ;;
+    esac
+done
 
 # Function to add a subtree
 add_subtree() {
@@ -36,6 +54,40 @@ add_submodule() {
         echo "Submodule already exists: $path"
     fi
 }
+
+# Function to import starred repositories
+import_starred_repos() {
+    local page=$1
+    local cache_file=".cache/starred_rust_repos_page_${page}.json"
+    
+    if [ ! -f "$cache_file" ]; then
+        echo "📡 Fetching starred repositories for page $page..."
+        ./scripts/fetch-starred-repos.sh "$page"
+    fi
+    
+    if [ ! -f "$cache_file" ]; then
+        echo "❌ Failed to fetch starred repositories"
+        return 1
+    fi
+    
+    echo "🌟 Importing starred Rust repositories from page $page..."
+    
+    # Read repositories from cache file and import them
+    jq -r '.[] | "\(.full_name) \(.default_branch // "main")"' "$cache_file" | while read -r repo branch; do
+        # Determine if it should be a subtree or submodule based on size or other criteria
+        # For now, we'll use submodules for starred repos to keep them separate
+        local repo_name=$(basename "$repo")
+        local path="external/starred-$repo_name"
+        
+        echo "📦 Importing starred repo: $repo"
+        add_submodule "$repo" "$path"
+    done
+}
+
+# Import starred repositories if requested
+if [ "$IMPORT_STARRED" = true ]; then
+    import_starred_repos "$STARRED_PAGE"
+fi
 
 # Priority imports - Core infrastructure
 echo "📦 Importing core infrastructure..."
